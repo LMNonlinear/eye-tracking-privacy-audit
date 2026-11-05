@@ -1,0 +1,266 @@
+{
+  "primary_tests": [],
+  "secondary_tests": [
+    {
+      "method": "welch_equal_fold_v1",
+      "status": "estimable",
+      "diff_pp": 0.0,
+      "standard_error_pp": 0.2672612419124244,
+      "degrees_of_freedom": 70.00000000000001,
+      "p": 1.0,
+      "ci95": [
+        -0.533035739408196,
+        0.533035739408196
+      ],
+      "inference_scope": "Approximate t inference, independent participants conditional on fixed models/galleries",
+      "fold_differences_pp": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "fold_group_sizes": [
+        [
+          8,
+          8
+        ],
+        [
+          8,
+          8
+        ],
+        [
+          8,
+          8
+        ],
+        [
+          8,
+          8
+        ],
+        [
+          8,
+          8
+        ]
+      ],
+      "leave_one_fold_out_pp": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "dataset": "study",
+      "evaluator": "synthetic",
+      "condition": "uniform",
+      "endpoint": "residual_rank1",
+      "holm_p": 1.0,
+      "passes_correction": false,
+      "decision_status": "conditional_calibrated"
+    },
+    {
+      "method": "welch_equal_fold_v1",
+      "status": "withheld_zero_sampling_variance",
+      "diff_pp": 0.0,
+      "standard_error_pp": 0.0,
+      "degrees_of_freedom": null,
+      "p": null,
+      "ci95": null,
+      "inference_scope": "Approximate t inference, independent participants conditional on fixed models/galleries",
+      "fold_differences_pp": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "fold_group_sizes": [
+        [
+          8,
+          8
+        ],
+        [
+          8,
+          8
+        ],
+        [
+          8,
+          8
+        ],
+        [
+          8,
+          8
+        ],
+        [
+          8,
+          8
+        ]
+      ],
+      "leave_one_fold_out_pp": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "dataset": "study",
+      "evaluator": "synthetic",
+      "condition": "uniform",
+      "endpoint": "change_from_baseline",
+      "holm_p": 1.0,
+      "passes_correction": null,
+      "decision_status": "withheld"
+    }
+  ],
+  "utility_tests": [],
+  "condition_results": [
+    {
+      "dataset": "study",
+      "evaluator": "synthetic",
+      "condition": "unprotected",
+      "overall_rank1_percent": 81.5,
+      "group_a_percent": 81.5,
+      "group_b_percent": 81.5,
+      "signed_gap_pp": 0.0
+    },
+    {
+      "dataset": "study",
+      "evaluator": "synthetic",
+      "condition": "uniform",
+      "overall_rank1_percent": 41.5,
+      "group_a_percent": 41.5,
+      "group_b_percent": 41.5,
+      "signed_gap_pp": 0.0
+    }
+  ],
+  "diagnostic_annotations": [
+    {
+      "dataset": "study",
+      "evaluator": "synthetic",
+      "condition": "unprotected",
+      "near_chance_descriptive": false,
+      "full_gallery_chance_percent": 6.25,
+      "fold_differences_pp": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "leave_one_fold_out_pp": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "fold_group_sizes": [
+        [
+          8,
+          8
+        ],
+        [
+          8,
+          8
+        ],
+        [
+          8,
+          8
+        ],
+        [
+          8,
+          8
+        ],
+        [
+          8,
+          8
+        ]
+      ],
+      "affects_residual_decision": false,
+      "note": "Baseline disparity, fold/gallery composition and floor proximity are annotations; no causal attribution or diagnostic veto"
+    },
+    {
+      "dataset": "study",
+      "evaluator": "synthetic",
+      "condition": "uniform",
+      "near_chance_descriptive": false,
+      "full_gallery_chance_percent": 6.25,
+      "fold_differences_pp": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "leave_one_fold_out_pp": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "fold_group_sizes": [
+        [
+          8,
+          8
+        ],
+        [
+          8,
+          8
+        ],
+        [
+          8,
+          8
+        ],
+        [
+          8,
+          8
+        ],
+        [
+          8,
+          8
+        ]
+      ],
+      "affects_residual_decision": false,
+      "note": "Baseline disparity, fold/gallery composition and floor proximity are annotations; no causal attribution or diagnostic veto"
+    }
+  ],
+  "family_sizes": [
+    0,
+    2,
+    0
+  ],
+  "status": "complete",
+  "analysis_mode": "welch_equal_fold_v1",
+  "calibration_status": "independent_score_level_gates_passed",
+  "formal_decisions_enabled": true,
+  "plan": {
+    "schema_version": 2,
+    "metric": "rank1_ir",
+    "baseline": "unprotected",
+    "conditions": [
+      "unprotected",
+      "uniform"
+    ],
+    "controls": [],
+    "hypotheses": [
+      [
+        "A",
+        "B"
+      ]
+    ],
+    "mechanism_pairs": [],
+    "alpha": 0.05,
+    "correction": "holm",
+    "seed": 42,
+    "n_boot": 10000,
+    "n_perm": 10000,
+    "scope": "Synthetic interface example only. Five equal-weight folds; participant resampling within fold/group; protected residual and baseline-change tests in a separate Holm family. No personalization or deployment recommendation."
+  },
+  "uncertainty": "Pointwise approximate Welch-Satterthwaite t intervals, conditional fixed-model independent-participant inference",
+  "limits": [
+    "Score-level calibration does not establish independence in shared-gallery or overlapping-training data.",
+    "Legacy six-check mode is a separate historical reproduction; diagnostic flags never veto residual-risk reporting.",
+    "No equivalence, causal ethnicity, deployment or strongest-attack guarantee."
+  ],
+  "scores_sha256": "3a9f9ce1fae4daff946f65adaf1592ea5acf91f0ba41b0fba07c093ee6352c89"
+}
