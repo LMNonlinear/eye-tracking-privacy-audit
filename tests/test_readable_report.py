@@ -11,7 +11,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from reportlab.platypus import KeepTogether, LongTable, Paragraph
-from scripts.render_audit_report import EffectChart, RateChart, _interpret_results, write_pdf_report
+from scripts.render_audit_report import EffectChart, RateChart, _interpret_results, _main_findings, write_pdf_report
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -70,6 +70,14 @@ class ReadableReportTests(unittest.TestCase):
         self.assertIn('Change in gap from baseline', text)
         self.assertIn('formal decision withheld', text)
         self.assertIn('alpha 0.0500', text)
+
+    def test_main_findings_are_two_sentences_and_respect_withholding(self):
+        original = copy.deepcopy(self.sample)
+        self.assertEqual(len(_main_findings(self.sample, 'zh')), 2)
+        report = copy.deepcopy(self.sample)
+        report['formal_decisions_enabled'] = False
+        self.assertIn('withheld', _main_findings(report, 'en')[1])
+        self.assertEqual(self.sample, original)
 
     def test_effect_plots_preserve_intervals_and_highlight_conclusions(self):
         with tempfile.TemporaryDirectory() as folder, patch('scripts.render_audit_report.SimpleDocTemplate.build') as build:

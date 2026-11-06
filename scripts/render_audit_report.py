@@ -49,7 +49,8 @@ TEXT = {
         'reader_caution': 'An estimated difference alone does not establish a reliable difference. See the corrected comparisons below; a result that does not pass does not prove equal protection.',
         'reader_chart': 'Identification rates by group',
         'reader_chart_note': 'Bars show estimated rates, not uncertainty. Statistical comparisons are reported below.',
-        'reader_findings': 'How to read these results',
+        'reader_findings': 'Statistical report of group differences',
+        'main_findings': 'Main findings',
         'supported': 'The group difference passed the planned multiple-comparison correction.',
         'unsupported': 'The group difference did not pass the planned correction; this does not establish equal protection.',
         'undecided': 'No formal conclusion about this difference is available.',
@@ -88,7 +89,8 @@ TEXT = {
         'reader_caution': '图中展示点估计；统计支持情况以预设多重比较校正结果为准。未通过检验不能证明群体保护效果相同。',
         'reader_chart': '不同保护条件下的群体身份识别率',
         'reader_chart_note': '条形表示各群体的识别率点估计；置信区间与多重比较结果见后文。',
-        'reader_findings': '群体识别率差异及统计结果',
+        'reader_findings': '群体识别率差异统计报告',
+        'main_findings': '主要结果',
         'supported': '群体差距在预设多重比较校正后具有统计支持。',
         'unsupported': '群体差距未通过预设多重比较校正，不能据此认定保护效果相同。',
         'undecided': '该群体差距暂无正式统计判定。',
@@ -190,6 +192,41 @@ def _number(value):
     return f'{value:.4f}'
 
 
+def _main_findings(result, language):
+    """Return two short conclusions based only on saved comparisons."""
+    rows = result['condition_results']
+    baseline_name = result['plan']['baseline']
+    baselines = {(x['dataset'], x['evaluator']): x for x in rows if x['condition'] == baseline_name}
+    protected = [x for x in rows if x['condition'] != baseline_name]
+    lower = 0
+    for row in protected:
+        base = baselines.get((row['dataset'], row['evaluator']))
+        if base and all(row.get(k) is not None and base.get(k) is not None and row[k] < base[k]
+                        for k in ('group_a_percent', 'group_b_percent')):
+            lower += 1
+    if language == 'zh':
+        first = ('所有保护条件下，两组的识别率均低于基线。' if protected and lower == len(protected)
+                 else f'所评估的 {len(protected)} 项保护条件中，{lower} 项的两组识别率均低于基线。')
+    else:
+        first = f'Both groups had lower estimated identification rates than baseline in {lower} of {len(protected)} evaluated settings.'
+    residual = [x for x in result['secondary_tests'] if x.get('endpoint') == 'residual_rank1']
+    supported = [x for x in residual if x.get('passes_correction') is True] if result.get('formal_decisions_enabled') else []
+    if supported and len(supported) == len(protected) and len(protected) <= 3 and all(x['diff_pp'] > 0 for x in supported):
+        details = '、'.join(f"{x['condition']} {x['diff_pp']:.1f}" for x in supported)
+        if language == 'zh':
+            second = f'保护后A组仍更容易被识别，群体差距为{details}个百分点，均获得统计支持。'
+        else:
+            details = ', '.join(f"{x['condition']}: {x['diff_pp']:.1f}" for x in supported)
+            second = f'Group A remained more identifiable, with statistically supported gaps of {details} percentage points.'
+    elif language == 'zh':
+        second = (f'{len(supported)} 项保护后群体差距获得统计支持，其他结果不能据此判为两组相同。'
+                  if result.get('formal_decisions_enabled') else '当前结果暂不能对保护后的群体差异作正式统计判断。')
+    else:
+        second = (f'{len(supported)} protected group gaps had statistical support; other results do not establish equal group risk.'
+                  if result.get('formal_decisions_enabled') else 'Formal conclusions about protected group differences are currently withheld.')
+    return first, second
+
+
 def _interpret_results(result, language):
     """Explain saved baseline, residual and change results without new tests."""
     plan = result['plan']
@@ -279,6 +316,7 @@ def write_pdf_report(result, destination, language='en', report_font=None):
         'heading': ParagraphStyle('heading', fontName=font.fontName, fontSize=12, leading=16, textColor=colors.HexColor('#205f60'), spaceBefore=12, spaceAfter=6, keepWithNext=True),
         'body': ParagraphStyle('body', fontName=font.fontName, fontSize=9.3, leading=14, spaceAfter=5, wordWrap='CJK'),
         'conclusion': ParagraphStyle('conclusion', fontName=font.fontName, fontSize=9.3, leading=14, spaceAfter=7, wordWrap='CJK', textColor=colors.HexColor('#aa2029')),
+        'main_result': ParagraphStyle('main_result', fontName=font.fontName, fontSize=14, leading=22, spaceAfter=10, wordWrap='CJK', textColor=colors.HexColor('#aa2029')),
         'cell': ParagraphStyle('cell', fontName=font.fontName, fontSize=7.5, leading=10.5, wordWrap='CJK' if language == 'zh' else None),
         'headcell': ParagraphStyle('headcell', fontName=font.fontName, fontSize=7.5, leading=10.5, textColor=colors.white, wordWrap='CJK' if language == 'zh' else None),
     }
@@ -403,6 +441,8 @@ def write_pdf_report(result, destination, language='en', report_font=None):
     for paragraph in _interpret_results(result, language):
         is_conclusion = ('校正后 p=' in paragraph or '基线条件（' in paragraph or 'adjusted p=' in paragraph or 'baseline (' in paragraph)
         story.append(para(paragraph, 'conclusion' if is_conclusion else 'body'))
+    story.append(KeepTogether([para(t['main_findings'], 'heading')] +
+                             [para(text, 'main_result') for text in _main_findings(result, language)]))
     heading(t['provenance'])
     story.append(para(f"{t['scores']}: {result['scores_sha256']}"))
     # Preserve the input plan's own description without turning it into a claim.
