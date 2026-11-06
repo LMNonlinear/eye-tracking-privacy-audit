@@ -6,6 +6,7 @@ from pathlib import Path
 import numpy as np
 
 from scripts.privacy_blocked_pipeline import load_table
+from scripts.render_audit_report import write_pdf_report
 from src.fairness.robust_inference import METHOD,group_contrast,paired_contrast,adjust_holm
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -65,6 +66,8 @@ def main():
     local=ROOT/'results/robust_audit_precision_confirmation/analysis.json'
     default_calibration=local if local.exists() else ROOT/'dev/robust_audit_calibration_summary.json'
     parser.add_argument('--output',required=True);parser.add_argument('--calibration',default=str(default_calibration))
+    parser.add_argument('--report-language', choices=['en','zh'], default='en', help='PDF language (default: en)')
+    parser.add_argument('--report-font', help='Unicode TrueType font (.ttf/.ttc) for the PDF')
     args=parser.parse_args();out=Path(args.output)
     if out.exists():raise FileExistsError('Preserve previous results')
     plan=json.loads(Path(args.plan).read_text(encoding='utf-8'))
@@ -77,7 +80,9 @@ def main():
                           'No equivalence, causal ethnicity, deployment or strongest-attack guarantee.'],
                   scores_sha256=hashlib.sha256(Path(args.scores).read_bytes()).hexdigest())
     out.mkdir(parents=True);(out/'report.json').write_text(json.dumps(result,indent=2,allow_nan=False)+'\n',encoding='utf-8')
-    print('ROBUST_AUDIT_COMPLETE',result['family_sizes'],status,flush=True)
+    # Retain JSON if rendering fails; never silently claim a PDF was produced.
+    write_pdf_report(result,out/'report.pdf',language=args.report_language,report_font=args.report_font)
+    print('ROBUST_AUDIT_COMPLETE',result['family_sizes'],status,'report.json report.pdf',flush=True)
 
 
 if __name__=='__main__':main()

@@ -254,7 +254,7 @@
     "seed": 42,
     "n_boot": 10000,
     "n_perm": 10000,
-    "scope": "Synthetic interface example only. Five equal-weight folds; participant resampling within fold/group; protected residual and baseline-change tests in a separate Holm family. No personalization or deployment recommendation."
+    "scope": "Synthetic interface example only. Five equal-weight folds; approximate Welch-Satterthwaite t inference; residual and baseline-change tests in a separate Holm family. No personalization or deployment recommendation."
   },
   "uncertainty": "Pointwise approximate Welch-Satterthwaite t intervals, conditional fixed-model independent-participant inference",
   "limits": [
