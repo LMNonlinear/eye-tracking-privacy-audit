@@ -1,5 +1,6 @@
 """Render an audit result as a readable PDF without recalculating statistics."""
 from pathlib import Path
+from itertools import groupby
 from xml.sax.saxutils import escape
 
 import reportlab
@@ -9,7 +10,7 @@ from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.platypus import LongTable, Paragraph, SimpleDocTemplate, Spacer, TableStyle
+from reportlab.platypus import Flowable, LongTable, Paragraph, SimpleDocTemplate, Spacer, TableStyle
 
 
 TEXT = {
@@ -42,6 +43,16 @@ TEXT = {
         'counts': 'Results: {passed} passed, {not_passed} did not pass, {withheld} withheld; {total} total.',
         'provenance': 'Provenance and limitations', 'unknown': 'Not specified',
         'page': 'Page', 'synthetic': 'Synthetic example: these values are not study results.',
+        'reader_title': 'Results at a glance',
+        'reader_intro': 'Identification rate is the percentage of attempts that correctly identify a person. Lower rates indicate less identity exposure under the tested attack.',
+        'reader_gap': 'Compare the two groups within each setting. The difference is group A minus group B, in percentage points; a positive value means group A was identified more often.',
+        'reader_caution': 'An estimated difference alone does not establish a reliable difference. See the corrected comparisons below; a result that does not pass does not prove equal protection.',
+        'reader_chart': 'Identification rates by group',
+        'reader_chart_note': 'Bars show estimated rates, not uncertainty. Statistical comparisons are reported below.',
+        'reader_findings': 'How to read these results',
+        'supported': 'The group difference passed the planned multiple-comparison correction.',
+        'unsupported': 'The group difference did not pass the planned correction; this does not establish equal protection.',
+        'undecided': 'No formal conclusion about this difference is available.',
     },
     'zh': {
         'title': '群体隐私保护审计报告', 'summary': '分析概况',
@@ -71,6 +82,16 @@ TEXT = {
         'counts': '结果：通过 {passed} 项，未通过 {not_passed} 项，暂不判决 {withheld} 项；共 {total} 项。',
         'provenance': '来源与适用范围', 'unknown': '未提供',
         'page': '页', 'synthetic': '合成示例：以下数值不是研究实验结果。',
+        'reader_title': '评估指标与结果概览',
+        'reader_intro': '身份识别率反映攻击者正确识别个体身份的比例。在所评估的攻击条件下，识别率越低，身份暴露风险越低。',
+        'reader_gap': '群体识别率差距定义为A组识别率减去B组识别率，以百分点表示；正值表示A组的身份暴露风险较高。',
+        'reader_caution': '图中展示点估计；统计支持情况以预设多重比较校正结果为准。未通过检验不能证明群体保护效果相同。',
+        'reader_chart': '不同保护条件下的群体身份识别率',
+        'reader_chart_note': '条形表示各群体的识别率点估计；置信区间与多重比较结果见后文。',
+        'reader_findings': '群体识别率差异及统计结果',
+        'supported': '群体差距在预设多重比较校正后具有统计支持。',
+        'unsupported': '群体差距未通过预设多重比较校正，不能据此认定保护效果相同。',
+        'undecided': '该群体差距暂无正式统计判定。',
         'calibration_passed': '已通过所测条件下的评分层校准',
         'calibration_missing': '缺少独立校准记录',
         'calibration_failed': '校准未通过或统计源码发生变化',
@@ -84,6 +105,45 @@ ZH_LIMITS = {
 }
 
 SYNTHETIC_SCOPE = 'Synthetic interface example only. Five equal-weight folds; approximate Welch-Satterthwaite t inference; residual and baseline-change tests in a separate Holm family. No personalization or deployment recommendation.'
+
+
+class RateChart(Flowable):
+    """Display saved estimates on a common zero-to-100 scale."""
+    def __init__(self, rows, pair, font_name, language):
+        super().__init__()
+        self.rows, self.pair, self.font_name, self.language = rows, pair, font_name, language
+        self.width = A4[0] - 40 * mm
+        self.height = (29 + 63 * len(rows))
+
+    def draw(self):
+        canvas = self.canv
+        canvas.setFont(self.font_name, 8)
+        x0, width = 105, self.width - 165
+        for tick in (0, 25, 50, 75, 100):
+            x = x0 + width * tick / 100
+            canvas.setStrokeColor(colors.HexColor('#dce5e5'))
+            canvas.line(x, 12, x, self.height - 19)
+            canvas.setFillColor(colors.HexColor('#52636a'))
+            canvas.drawCentredString(x, 1, f'{tick}%')
+        for index, row in enumerate(self.rows):
+            top = self.height - 21 - index * 63
+            condition = str(row['condition'])
+            canvas.setFillColor(colors.HexColor('#233d43'))
+            canvas.setFont(self.font_name, 9)
+            canvas.drawString(0, top, condition)
+            for n, key in enumerate(('group_a_percent', 'group_b_percent')):
+                value = row.get(key)
+                y = top - 18 - n * 17
+                canvas.setFillColor(colors.HexColor('#33494f'))
+                canvas.setFont(self.font_name, 8)
+                canvas.drawString(0, y, 'A' if n == 0 else 'B')
+                if value is None:
+                    canvas.drawString(x0, y, '-')
+                    continue
+                canvas.setFillColor(colors.HexColor('#675297') if n == 0 else colors.HexColor('#237d70'))
+                canvas.rect(x0, y - 2, width * max(0, min(100, float(value))) / 100, 9, fill=1, stroke=0)
+                canvas.setFillColor(colors.HexColor('#233d43'))
+                canvas.drawString(x0 + width + 5, y, f'{float(value):.1f}%')
 
 
 def _number(value):
@@ -167,8 +227,45 @@ def write_pdf_report(result, destination, language='en', report_font=None):
     plan = result['plan']
     if 'synthetic' in str(plan.get('scope', '')).lower():
         story.append(para(t['synthetic']))
-    heading(t['summary'])
     pair = plan['hypotheses'][0]
+    heading(t['reader_title'])
+    story.append(para(t['reader_intro']))
+    story.append(para(t['reader_gap']))
+    story.append(para(t['reader_caution']))
+    heading(t['reader_chart'])
+    story.append(para(t['reader_chart_note']))
+    story.append(para(f'A: {pair[0]}    B: {pair[1]}'))
+    condition_rows = result['condition_results']
+    for (dataset, evaluator), group in groupby(condition_rows, key=lambda x: (x['dataset'], x['evaluator'])):
+        grouped = list(group)
+        story.append(para(f'{dataset} / {evaluator}'))
+        for offset in range(0, len(grouped), 5):
+            chunk = grouped[offset:offset + 5]
+            # Validate glyphs before drawing directly on the canvas.
+            for row in chunk:
+                para(row['condition'])
+            for group_name in pair:
+                para(group_name)
+            story.append(RateChart(chunk, pair, font.fontName, language))
+            story.append(Spacer(1, 5 * mm))
+    heading(t['reader_findings'])
+    for row in condition_rows:
+        if row['condition'] == plan['baseline']:
+            continue
+        tests = [x for x in result['secondary_tests']
+                 if x.get('dataset') == row['dataset'] and x.get('evaluator') == row['evaluator']
+                 and x.get('condition') == row['condition'] and x.get('endpoint') == 'residual_rank1']
+        decision = tests[0].get('passes_correction') if len(tests) == 1 else None
+        status = t['supported'] if decision is True else t['unsupported'] if decision is False else t['undecided']
+        a, b, gap = row.get('group_a_percent'), row.get('group_b_percent'), row.get('signed_gap_pp')
+        if a is None or b is None or gap is None:
+            continue
+        if language == 'zh':
+            sentence = f"{row['dataset']} / {row['evaluator']}，{row['condition']}：A组 {a:.1f}%，B组 {b:.1f}%，A减B为 {gap:+.1f} 个百分点。{status}"
+        else:
+            sentence = f"{row['dataset']} / {row['evaluator']}, {row['condition']}: A {a:.1f}%, B {b:.1f}%, A minus B {gap:+.1f} percentage points. {status}"
+        story.append(para(sentence))
+    heading(t['summary'])
     calibration = result['calibration_status']
     if language == 'zh':
         calibration = {'independent_score_level_gates_passed': t['calibration_passed'],
@@ -238,6 +335,10 @@ def write_pdf_report(result, destination, language='en', report_font=None):
         canvas.setFont(font.fontName, 8)
         canvas.setFillColor(colors.HexColor('#647681'))
         canvas.drawRightString(A4[0] - 20 * mm, 13 * mm, f"{t['page']} {doc.page}")
+        if 'synthetic' in str(plan.get('scope', '')).lower():
+            canvas.setFont(font.fontName, 7)
+            note = '本报告为样本，基于仿真数据生成。' if language == 'zh' else 'Sample report generated from simulated data.'
+            canvas.drawString(20 * mm, 13 * mm, note)
 
     doc = SimpleDocTemplate(str(destination), pagesize=A4, leftMargin=20 * mm, rightMargin=20 * mm,
                             topMargin=18 * mm, bottomMargin=20 * mm,

@@ -11,7 +11,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from reportlab.platypus import LongTable, Paragraph
-from scripts.render_audit_report import write_pdf_report
+from scripts.render_audit_report import RateChart, write_pdf_report
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -50,6 +50,15 @@ class ReadableReportTests(unittest.TestCase):
             text = '\n'.join(item.getPlainText() for item in build.call_args.args[0] if isinstance(item, Paragraph))
         self.assertIn('Formal decisions enabled: No', text)
         self.assertIn('0 passed, 0 did not pass, 2 withheld; 2 total', text)
+
+    def test_overview_chart_uses_saved_rates_without_changing_results(self):
+        original = copy.deepcopy(self.sample)
+        with tempfile.TemporaryDirectory() as folder, patch('scripts.render_audit_report.SimpleDocTemplate.build') as build:
+            write_pdf_report(self.sample, Path(folder) / 'out.pdf')
+            charts = [item for item in build.call_args.args[0] if isinstance(item, RateChart)]
+            self.assertTrue(charts)
+            self.assertEqual([row for chart in charts for row in chart.rows], self.sample['condition_results'])
+        self.assertEqual(self.sample, original)
 
     def test_cli_creates_pdf_json_and_refuses_overwrite(self):
         with tempfile.TemporaryDirectory() as folder:

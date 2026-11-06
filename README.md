@@ -13,7 +13,7 @@ python -m pip install -r requirements.txt
 python -m scripts.run_robust_privacy_audit --scores examples/privacy_pipeline_scores.csv --plan configs/privacy_pipeline_blocked_example.json --output results/example_audit
 ```
 
-The output directory must not already exist. The command writes `results/example_audit/report.json` for machine processing and `results/example_audit/report.pdf` for reading and sharing. An example JSON is included as `examples/ROBUST_AUDIT_SYNTHETIC_REPORT.json`. Its residual difference is zero; the baseline-relative change has zero sampling variance, so the software withholds that formal decision. These synthetic values are not results from the study.
+The output directory must not already exist. The command writes `results/example_audit/report.json` for machine processing and `results/example_audit/report.pdf` for reading and sharing. The PDF includes group identification-rate charts for each dataset and evaluator, with results shown separately for each protection condition. It also explains the direction of the group gap and presents the pre-specified statistical comparisons. An example JSON is included as `examples/ROBUST_AUDIT_SYNTHETIC_REPORT.json`. Its residual difference is zero; the baseline-relative change has zero sampling variance, so the software withholds that formal decision. These synthetic values are not results from the study.
 
 To produce a Chinese PDF, add `--report-language zh` to the command. A suitable system TrueType Chinese font is required. If a font is unavailable or lacks a character in the report, use `--report-font` with a Unicode `.ttf` or `.ttc` font path. The English report is the default; its bundled font supports common Latin characters. Both report languages embed their selected font. Reports are written locally; the tool does not upload scores or results.
 
@@ -24,7 +24,7 @@ python examples/generate_illustrative_scores.py --output results/illustrative_in
 python -m scripts.run_robust_privacy_audit --scores results/illustrative_inputs/synthetic_scores.csv --plan results/illustrative_inputs/plan.json --output results/illustrative_audit --report-language zh
 ```
 
-The fixture uses a fixed random seed and is solely for demonstrating the report. It is neither a study dataset nor a calibration experiment.
+Open `results/illustrative_audit/report.pdf` to view the Chinese report, including charts and a concise interpretation. The fixture uses a fixed random seed and is solely for demonstrating the report. It is neither a study dataset nor a calibration experiment. A plan whose scope identifies it as synthetic receives a sample-data note in the report footer.
 
 To render an existing JSON without recalculating the analysis, choose a new PDF path:
 
@@ -42,7 +42,7 @@ The example JSON uses schema version 2, alpha 0.05 and Holm correction. Its `see
 
 ## Report and interpretation
 
-The reports contain condition summaries, signed group gaps, changes from baseline, mechanism and utility comparisons where specified, confidence intervals, raw and adjusted p-values, family sizes, diagnostics, a score-file hash and calibration status. The PDF also summarizes the number of passed, not-passed and withheld decisions in each family. An unestimable zero-variance test is retained in its family and its decision is withheld. The intervals are pointwise, not simultaneous intervals; a result that does not pass correction does not prove equal protection.
+The PDF charts show identification-rate point estimates on a 0–100% scale. The group order comes from the plan; a positive A-minus-B gap means group A has a higher estimated identification rate. Bars do not display uncertainty; consult the pointwise confidence intervals and adjusted comparisons in the report. The report retains condition summaries, signed group gaps, changes from baseline, mechanism and utility comparisons where specified, raw and adjusted p-values, family sizes, diagnostics, a score-file hash and calibration status. It also summarizes the number of passed, not-passed and withheld decisions in each family. An unestimable zero-variance test is retained in its family and its decision is withheld. The intervals are pointwise, not simultaneous intervals; a result that does not pass correction does not prove equal protection.
 
 Inference is conditional on the supplied fitted models and galleries and assumes independent participants. The included score-level calibration summary is checked against the inference source; it does not establish independence under shared-gallery or overlapping-training dependence, nor directly establish familywise error control for every new comparison plan. Missing calibration or a changed method disables formal decisions. The audit does not verify how data were collected, split or protected, and does not establish equivalence, causal demographic effects, a privacy guarantee or the strongest possible attack. The study's noise-aware training and scoring experiments are separate from this score-table tool.
 
