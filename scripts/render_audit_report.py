@@ -10,7 +10,7 @@ from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.platypus import Flowable, KeepTogether, LongTable, PageBreak, Paragraph, SimpleDocTemplate, Spacer, TableStyle
+from reportlab.platypus import Flowable, KeepTogether, LongTable, Paragraph, SimpleDocTemplate, Spacer, TableStyle
 
 
 TEXT = {
@@ -369,6 +369,8 @@ def write_pdf_report(result, destination, language='en', report_font=None):
         story.append(Spacer(1, 4 * mm))
 
     story.append(para(t['title'], 'title'))
+    story.append(KeepTogether([para(t['main_findings'], 'heading')] +
+                             [para(text, 'main_result') for text in _main_findings(result, language)]))
     plan = result['plan']
     pair = plan['hypotheses'][0]
     heading(t['reader_title'])
@@ -409,8 +411,6 @@ def write_pdf_report(result, destination, language='en', report_font=None):
     for x in condition_rows:
         story.append(para(f"{x['dataset']} / {x['evaluator']} / {x['condition']}: {t['overall']} = {_number(x['overall_rank1_percent'])}"))
 
-    if any(result[key] for key in ('primary_tests', 'secondary_tests', 'utility_tests')):
-        story.append(PageBreak())
     for key, label in [('primary_tests', 'primary'), ('secondary_tests', 'secondary'), ('utility_tests', 'utility')]:
         comparisons = result[key]
         if not comparisons:
@@ -459,8 +459,6 @@ def write_pdf_report(result, destination, language='en', report_font=None):
     for paragraph in _interpret_results(result, language):
         is_conclusion = ('校正后 p=' in paragraph or '基线条件（' in paragraph or 'adjusted p=' in paragraph or 'baseline (' in paragraph)
         story.append(para(paragraph, 'conclusion' if is_conclusion else 'body'))
-    story.append(KeepTogether([para(t['main_findings'], 'heading')] +
-                             [para(text, 'main_result') for text in _main_findings(result, language)]))
     heading(t['provenance'])
     story.append(para(f"{t['scores']}: {result['scores_sha256']}"))
     # Preserve the input plan's own description without turning it into a claim.
