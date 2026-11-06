@@ -115,7 +115,7 @@ class RateChart(Flowable):
         super().__init__()
         self.rows, self.pair, self.font_name, self.language = rows, pair, font_name, language
         self.width = A4[0] - 40 * mm
-        self.height = (29 + 63 * len(rows))
+        self.height = (29 + 58 * len(rows))
 
     def draw(self):
         canvas = self.canv
@@ -128,7 +128,7 @@ class RateChart(Flowable):
             canvas.setFillColor(colors.HexColor('#52636a'))
             canvas.drawCentredString(x, 1, f'{tick}%')
         for index, row in enumerate(self.rows):
-            top = self.height - 21 - index * 63
+            top = self.height - 21 - index * 58
             condition = str(row['condition'])
             canvas.setFillColor(colors.HexColor('#233d43'))
             canvas.setFont(self.font_name, 9)
@@ -197,8 +197,32 @@ def _main_findings(result, language):
     rows = result['condition_results']
     baseline_name = result['plan']['baseline']
     baselines = {(x['dataset'], x['evaluator']): x for x in rows if x['condition'] == baseline_name}
-    protected = [x for x in rows if x['condition'] != baseline_name]
+    excluded = {baseline_name, *result['plan'].get('controls', [])}
+    protected = [x for x in rows if x['condition'] not in excluded]
     zh = language == 'zh'
+    if len(protected) > 3:
+        baseline_gaps = [x.get('signed_gap_pp') for x in baselines.values()]
+        matched = [(x, baselines.get((x['dataset'], x['evaluator']))) for x in protected]
+        if baseline_gaps and all(x is not None for x in baseline_gaps) and all(
+                base is not None and row.get('signed_gap_pp') is not None for row, base in matched):
+            a, b = result['plan']['hypotheses'][0]
+            low, high = min(baseline_gaps), max(baseline_gaps)
+            if low > 0:
+                first = (f'本次数据中，保护前{a}组识别率均高于{b}组，差距为 {low:.2f} 至 {high:.2f} 个百分点。' if zh else
+                         f'In these data, before protection, {a} had higher identification rates than {b}, with gaps of {low:.2f} to {high:.2f} percentage points.')
+            else:
+                first = (f'本次数据中，保护前{a}组减{b}组的识别率差距为 {low:.2f} 至 {high:.2f} 个百分点。' if zh else
+                         f'In these data, baseline identification-rate differences ({a} minus {b}) ranged from {low:.2f} to {high:.2f} percentage points.')
+            larger = sum(abs(row['signed_gap_pp']) > abs(base['signed_gap_pp']) for row, base in matched)
+            smaller = sum(abs(row['signed_gap_pp']) < abs(base['signed_gap_pp']) for row, base in matched)
+            equal = len(matched) - larger - smaller
+            second = (f'保护后，与各自保护前相比，{len(matched)}项条件中有{larger}项的群体差距数值变大、{smaller}项变小' if zh else
+                      f'After protection, compared with their own baselines, gap magnitudes increased in {larger} of {len(matched)} settings and decreased in {smaller}')
+            if equal:
+                second += f'、{equal}项数值不变' if zh else f' and were unchanged in {equal}'
+            if not result.get('formal_decisions_enabled'):
+                second += '；暂不作正式统计判断' if zh else '; formal statistical decisions are withheld'
+            return first, second + ('。' if zh else '.')
     multiple = len(baselines) > 1
     before, after = [], []
     for (dataset, evaluator), base in baselines.items():
@@ -265,7 +289,7 @@ def _interpret_results(result, language):
             a, b, gap = (base.get('group_a_percent'), base.get('group_b_percent'), base.get('signed_gap_pp'))
             if None not in (a, b, gap):
                 if language == 'zh':
-                    yield f"{dataset} / {evaluator}，基线条件（{plan['baseline']}）：A组识别率 {a:.1f}%，B组 {b:.1f}%，A减B的估计差距为 {gap:+.1f} 个百分点。本报告未对基线差距单独进行显著性检验。"
+                    yield f"{dataset} / {evaluator}，基线条件（{plan['baseline']}）：A组识别率 {a:.1f}%，B组 {b:.1f}%，A减B的估计差距为 {gap:+.2f} 个百分点。本报告未对基线差距单独进行显著性检验。"
                 else:
                     yield f"{dataset} / {evaluator}, baseline ({plan['baseline']}): A {a:.1f}%, B {b:.1f}%; the estimated A-minus-B gap is {gap:+.1f} percentage points. This report does not separately test the baseline gap."
         for row in group:
@@ -383,7 +407,6 @@ def write_pdf_report(result, destination, language='en', report_font=None):
     condition_rows = result['condition_results']
     for (dataset, evaluator), group in groupby(condition_rows, key=lambda x: (x['dataset'], x['evaluator'])):
         grouped = list(group)
-        story.append(para(f'{dataset} / {evaluator}'))
         for offset in range(0, len(grouped), 5):
             chunk = grouped[offset:offset + 5]
             # Validate glyphs before drawing directly on the canvas.
@@ -391,7 +414,8 @@ def write_pdf_report(result, destination, language='en', report_font=None):
                 para(row['condition'])
             for group_name in pair:
                 para(group_name)
-            story.append(RateChart(chunk, pair, font.fontName, language))
+            story.append(KeepTogether([para(f'{dataset} / {evaluator}'),
+                                       RateChart(chunk, pair, font.fontName, language)]))
             story.append(Spacer(1, 5 * mm))
     heading(t['summary'])
     calibration = result['calibration_status']

@@ -59,7 +59,8 @@ class ReadableReportTests(unittest.TestCase):
         original = copy.deepcopy(self.sample)
         with tempfile.TemporaryDirectory() as folder, patch('scripts.render_audit_report.SimpleDocTemplate.build') as build:
             write_pdf_report(self.sample, Path(folder) / 'out.pdf')
-            charts = [item for item in build.call_args.args[0] if isinstance(item, RateChart)]
+            charts = [child for item in build.call_args.args[0] if isinstance(item, KeepTogether)
+                      for child in item._content if isinstance(child, RateChart)]
             self.assertTrue(charts)
             self.assertEqual([row for chart in charts for row in chart.rows], self.sample['condition_results'])
         self.assertEqual(self.sample, original)
@@ -95,6 +96,21 @@ class ReadableReportTests(unittest.TestCase):
         self.assertIn('缩小到约 1.0 个百分点，变为B组识别率更高', _main_findings(report, 'zh')[1])
         report['condition_results'][0]['signed_gap_pp'] = 0.0
         self.assertIn('两组识别率相同', _main_findings(report, 'zh')[0])
+
+    def test_many_conditions_keep_summary_short_and_exclude_controls(self):
+        report = copy.deepcopy(self.sample)
+        report['plan']['controls'] = ['control']
+        report['condition_results'] = [
+            dict(dataset='data', evaluator='model', condition=name, signed_gap_pp=gap)
+            for name, gap in [(report['plan']['baseline'], 2), ('control', 99),
+                              ('one', 4), ('two', 1), ('three', -3), ('four', 2)]]
+        first, second = _main_findings(report, 'zh')
+        self.assertIn('4项条件中有2项', second)
+        self.assertIn('1项变小', second)
+        self.assertIn('1项数值不变', second)
+        self.assertLess(len(first + second), 200)
+        report['formal_decisions_enabled'] = False
+        self.assertIn('withheld', _main_findings(report, 'en')[1])
 
     def test_effect_plots_preserve_intervals_and_highlight_conclusions(self):
         with tempfile.TemporaryDirectory() as folder, patch('scripts.render_audit_report.SimpleDocTemplate.build') as build:
