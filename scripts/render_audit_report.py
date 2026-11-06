@@ -155,6 +155,59 @@ def _number(value):
     return f'{value:.4f}'
 
 
+def _interpret_results(result, language):
+    """Explain saved baseline, residual and change results without new tests."""
+    plan = result['plan']
+    rows = result['condition_results']
+    tests = result['secondary_tests']
+    alpha = plan.get('alpha')
+    if language == 'zh':
+        yield f"统计方法：重复评分先按参与者取平均，再将五折等权汇总；使用 Welch-Satterthwaite 近似 t 检验及 Holm 多重比较校正，显著性水平为 {_number(alpha)}。区间为逐项95%置信区间。"
+        yield '保护设置及其参数以输入计划中的条件名称和说明为准；若计划未提供具体参数，本报告无法补充。'
+    else:
+        yield f"Method: repeated scores are averaged per participant and the five folds are equally weighted; Welch-Satterthwaite approximate t tests use Holm correction at alpha {_number(alpha)}. Intervals are pointwise 95% confidence intervals."
+        yield 'Protection settings and parameters are those supplied in the input plan; unreported parameters cannot be inferred.'
+    for (dataset, evaluator), group in groupby(rows, key=lambda x: (x['dataset'], x['evaluator'])):
+        group = list(group)
+        baselines = [r for r in group if r['condition'] == plan['baseline']]
+        if len(baselines) == 1:
+            base = baselines[0]
+            a, b, gap = (base.get('group_a_percent'), base.get('group_b_percent'), base.get('signed_gap_pp'))
+            if None not in (a, b, gap):
+                if language == 'zh':
+                    yield f"{dataset} / {evaluator}，基线条件（{plan['baseline']}）：A组识别率 {a:.1f}%，B组 {b:.1f}%，A减B的估计差距为 {gap:+.1f} 个百分点。本报告未对基线差距单独进行显著性检验。"
+                else:
+                    yield f"{dataset} / {evaluator}, baseline ({plan['baseline']}): A {a:.1f}%, B {b:.1f}%; the estimated A-minus-B gap is {gap:+.1f} percentage points. This report does not separately test the baseline gap."
+        for row in group:
+            if row['condition'] == plan['baseline']:
+                continue
+            prefix = f"{dataset} / {evaluator}，{row['condition']}" if language == 'zh' else f"{dataset} / {evaluator}, {row['condition']}"
+            a, b, gap = row.get('group_a_percent'), row.get('group_b_percent'), row.get('signed_gap_pp')
+            if None in (a, b, gap):
+                continue
+            if language == 'zh':
+                yield f"{prefix}：A组识别率 {a:.1f}%，B组 {b:.1f}%，保护后的估计差距为 {gap:+.1f} 个百分点。"
+            else:
+                yield f"{prefix}: A {a:.1f}%, B {b:.1f}%; the estimated protected gap is {gap:+.1f} percentage points."
+            for endpoint in ('residual_rank1', 'change_from_baseline'):
+                matches = [x for x in tests if x.get('dataset') == dataset and x.get('evaluator') == evaluator
+                           and x.get('condition') == row['condition'] and x.get('endpoint') == endpoint]
+                if len(matches) != 1:
+                    continue
+                test = matches[0]
+                ci = test.get('ci95')
+                interval = f"[{_number(ci[0])}, {_number(ci[1])}]" if ci is not None else '-'
+                decision = test.get('passes_correction')
+                if language == 'zh':
+                    label = '保护后群体差距' if endpoint == 'residual_rank1' else '相对基线的差距变化（保护后减基线）'
+                    state = '通过校正' if decision is True else '未通过校正，不能据此认定差异为零' if decision is False else '暂不作正式判定'
+                    yield f"{label}：{_number(test.get('diff_pp'))} 个百分点，95%区间 {interval}，校正后 p={_number(test.get('holm_p'))}；{state}。"
+                else:
+                    label = 'Protected group gap' if endpoint == 'residual_rank1' else 'Change in gap from baseline (protected minus baseline)'
+                    state = 'passed correction' if decision is True else 'did not pass correction; this does not establish a zero difference' if decision is False else 'formal decision withheld'
+                    yield f"{label}: {_number(test.get('diff_pp'))} percentage points, 95% interval {interval}, adjusted p={_number(test.get('holm_p'))}; {state}."
+
+
 def _font(report_font, language):
     """Use an embedded font; fail visibly if needed glyphs are unavailable."""
     candidates = [report_font] if report_font else []
@@ -248,23 +301,6 @@ def write_pdf_report(result, destination, language='en', report_font=None):
                 para(group_name)
             story.append(RateChart(chunk, pair, font.fontName, language))
             story.append(Spacer(1, 5 * mm))
-    heading(t['reader_findings'])
-    for row in condition_rows:
-        if row['condition'] == plan['baseline']:
-            continue
-        tests = [x for x in result['secondary_tests']
-                 if x.get('dataset') == row['dataset'] and x.get('evaluator') == row['evaluator']
-                 and x.get('condition') == row['condition'] and x.get('endpoint') == 'residual_rank1']
-        decision = tests[0].get('passes_correction') if len(tests) == 1 else None
-        status = t['supported'] if decision is True else t['unsupported'] if decision is False else t['undecided']
-        a, b, gap = row.get('group_a_percent'), row.get('group_b_percent'), row.get('signed_gap_pp')
-        if a is None or b is None or gap is None:
-            continue
-        if language == 'zh':
-            sentence = f"{row['dataset']} / {row['evaluator']}，{row['condition']}：A组 {a:.1f}%，B组 {b:.1f}%，A减B为 {gap:+.1f} 个百分点。{status}"
-        else:
-            sentence = f"{row['dataset']} / {row['evaluator']}, {row['condition']}: A {a:.1f}%, B {b:.1f}%, A minus B {gap:+.1f} percentage points. {status}"
-        story.append(para(sentence))
     heading(t['summary'])
     calibration = result['calibration_status']
     if language == 'zh':
@@ -321,6 +357,9 @@ def write_pdf_report(result, destination, language='en', report_font=None):
     heading(t['interpretation'])
     for key in ('pointwise', 'nonestimable', 'near_note', 'change_note', 'nondetection_note', 'mechanism_note', 'method_note'):
         story.append(para(t[key]))
+    heading(t['reader_findings'])
+    for paragraph in _interpret_results(result, language):
+        story.append(para(paragraph))
     heading(t['provenance'])
     story.append(para(f"{t['scores']}: {result['scores_sha256']}"))
     # Preserve the input plan's own description without turning it into a claim.

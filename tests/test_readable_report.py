@@ -11,7 +11,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from reportlab.platypus import LongTable, Paragraph
-from scripts.render_audit_report import RateChart, write_pdf_report
+from scripts.render_audit_report import RateChart, _interpret_results, write_pdf_report
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -59,6 +59,13 @@ class ReadableReportTests(unittest.TestCase):
             self.assertTrue(charts)
             self.assertEqual([row for chart in charts for row in chart.rows], self.sample['condition_results'])
         self.assertEqual(self.sample, original)
+
+    def test_interpretation_separates_baseline_and_unavailable_decisions(self):
+        text = '\n'.join(_interpret_results(self.sample, 'en'))
+        self.assertIn('does not separately test the baseline gap', text)
+        self.assertIn('Change in gap from baseline', text)
+        self.assertIn('formal decision withheld', text)
+        self.assertIn('alpha 0.0500', text)
 
     def test_cli_creates_pdf_json_and_refuses_overwrite(self):
         with tempfile.TemporaryDirectory() as folder:
