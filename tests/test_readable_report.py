@@ -1,5 +1,7 @@
 """Check report content, preserved decisions, and safe CLI output behavior."""
 import copy
+import csv
+import hashlib
 import json
 import subprocess
 import sys
@@ -91,6 +93,25 @@ class ReadableReportTests(unittest.TestCase):
             self.assertIn('Preserve existing reports', again.stderr)
             self.assertEqual(output.read_bytes(), original_pdf)
         self.assertEqual(source.read_bytes(), before)
+
+    def test_illustrative_generator_is_reproducible_and_safe(self):
+        with tempfile.TemporaryDirectory() as folder:
+            output = Path(folder) / 'inputs'
+            command = [sys.executable, 'examples/generate_illustrative_scores.py', '--output', str(output)]
+            completed = subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            source = output / 'synthetic_scores.csv'
+            with source.open(encoding='utf8', newline='') as stream:
+                rows = list(csv.DictReader(stream))
+            self.assertEqual(len(rows), 200 * 3 * 3)
+            self.assertEqual(len({row['subject_id'] for row in rows}), 200)
+            self.assertEqual({row['fold'] for row in rows}, {'0', '1', '2', '3', '4'})
+            self.assertEqual(hashlib.sha256(source.read_bytes()).hexdigest(),
+                             '34d1769100c8015052ba2843526a0d2b2c3a23d42af1a5d24685638c36c0305f')
+            self.assertIn('Synthetic', json.loads((output / 'plan.json').read_text(encoding='utf8'))['scope'])
+            again = subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
+            self.assertNotEqual(again.returncode, 0)
+            self.assertIn('Preserve previous inputs', again.stderr)
 
 
 if __name__ == '__main__':

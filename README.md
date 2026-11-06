@@ -17,6 +17,15 @@ The output directory must not already exist. The command writes `results/example
 
 To produce a Chinese PDF, add `--report-language zh` to the command. A suitable system TrueType Chinese font is required. If a font is unavailable or lacks a character in the report, use `--report-font` with a Unicode `.ttf` or `.ttc` font path. The English report is the default; its bundled font supports common Latin characters. Both report languages embed their selected font. Reports are written locally; the tool does not upload scores or results.
 
+For a more detailed artificial example with 200 simulated participants and three conditions, generate a fresh fixture and audit it:
+
+```bash
+python examples/generate_illustrative_scores.py --output results/illustrative_inputs
+python -m scripts.run_robust_privacy_audit --scores results/illustrative_inputs/synthetic_scores.csv --plan results/illustrative_inputs/plan.json --output results/illustrative_audit --report-language zh
+```
+
+The fixture uses a fixed random seed and is solely for demonstrating the report. It is neither a study dataset nor a calibration experiment.
+
 To render an existing JSON without recalculating the analysis, choose a new PDF path:
 
 ```bash
