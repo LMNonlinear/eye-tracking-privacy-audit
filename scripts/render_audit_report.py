@@ -193,37 +193,55 @@ def _number(value):
 
 
 def _main_findings(result, language):
-    """Return two short conclusions based only on saved comparisons."""
+    """Describe observed baseline gaps and absolute gap changes in two sentences."""
     rows = result['condition_results']
     baseline_name = result['plan']['baseline']
     baselines = {(x['dataset'], x['evaluator']): x for x in rows if x['condition'] == baseline_name}
     protected = [x for x in rows if x['condition'] != baseline_name]
-    lower = 0
+    zh = language == 'zh'
+    multiple = len(baselines) > 1
+    before, after = [], []
+    for (dataset, evaluator), base in baselines.items():
+        gap = base.get('signed_gap_pp')
+        if gap is None:
+            continue
+        prefix = f'{dataset} / {evaluator}: ' if multiple else ''
+        if gap == 0:
+            detail = '两组识别率相同' if zh else 'the two groups had the same identification rate'
+        else:
+            higher, lower = ('A', 'B') if gap > 0 else ('B', 'A')
+            detail = (f'{higher}组识别率比{lower}组高约 {abs(gap):.1f} 个百分点' if zh else
+                      f'group {higher} had an identification rate about {abs(gap):.1f} percentage points higher than group {lower}')
+        before.append(prefix + detail)
     for row in protected:
         base = baselines.get((row['dataset'], row['evaluator']))
-        if base and all(row.get(k) is not None and base.get(k) is not None and row[k] < base[k]
-                        for k in ('group_a_percent', 'group_b_percent')):
-            lower += 1
-    if language == 'zh':
-        first = ('所有保护条件下，两组的识别率均低于基线。' if protected and lower == len(protected)
-                 else f'所评估的 {len(protected)} 项保护条件中，{lower} 项的两组识别率均低于基线。')
-    else:
-        first = f'Both groups had lower estimated identification rates than baseline in {lower} of {len(protected)} evaluated settings.'
-    residual = [x for x in result['secondary_tests'] if x.get('endpoint') == 'residual_rank1']
-    supported = [x for x in residual if x.get('passes_correction') is True] if result.get('formal_decisions_enabled') else []
-    if supported and len(supported) == len(protected) and len(protected) <= 3 and all(x['diff_pp'] > 0 for x in supported):
-        details = '、'.join(f"{x['condition']} {x['diff_pp']:.1f}" for x in supported)
-        if language == 'zh':
-            second = f'保护后A组仍更容易被识别，群体差距为{details}个百分点，均获得统计支持。'
+        gap = row.get('signed_gap_pp')
+        if base is None or base.get('signed_gap_pp') is None or gap is None:
+            continue
+        old, new = abs(base['signed_gap_pp']), abs(gap)
+        name = row['condition']
+        if multiple:
+            name = f"{row['dataset']} / {row['evaluator']}: {name}"
+        # Matching displayed values describe rounding, not statistical equivalence.
+        if f'{new:.1f}' == f'{old:.1f}':
+            detail = (f'{name}后差距约为 {new:.1f} 个百分点，与保护前数值接近' if zh else
+                      f'after {name}, the gap was about {new:.1f} percentage points, numerically close to the baseline gap')
         else:
-            details = ', '.join(f"{x['condition']}: {x['diff_pp']:.1f}" for x in supported)
-            second = f'Group A remained more identifiable, with statistically supported gaps of {details} percentage points.'
-    elif language == 'zh':
-        second = (f'{len(supported)} 项保护后群体差距获得统计支持，其他结果不能据此判为两组相同。'
-                  if result.get('formal_decisions_enabled') else '当前结果暂不能对保护后的群体差异作正式统计判断。')
-    else:
-        second = (f'{len(supported)} protected group gaps had statistical support; other results do not establish equal group risk.'
-                  if result.get('formal_decisions_enabled') else 'Formal conclusions about protected group differences are currently withheld.')
+            direction = ('扩大到' if new > old else '缩小到') if zh else ('increased to' if new > old else 'decreased to')
+            detail = (f'{name}后差距{direction}约 {new:.1f} 个百分点' if zh else
+                      f'after {name}, the gap {direction} about {new:.1f} percentage points')
+        if gap * base['signed_gap_pp'] < 0:
+            higher = 'A' if gap > 0 else 'B'
+            detail += f'，变为{higher}组识别率更高' if zh else f', with group {higher} now more identifiable'
+        after.append(detail)
+    separator, stop = ('；', '。') if zh else ('; ', '.')
+    first = (('本次数据中，保护前' if zh else 'In these data, before protection, ') + separator.join(before)
+             if before else ('缺少保护前的群体识别率数据' if zh else 'Baseline group identification rates are unavailable')) + stop
+    second = (separator.join(after) if after else
+              ('缺少可比较的保护前后数据' if zh else 'Comparable before-and-after data are unavailable'))
+    if not result.get('formal_decisions_enabled'):
+        second += '；以上仅描述数值，暂不作正式统计判断' if zh else '; formal statistical decisions are withheld'
+    second += stop
     return first, second
 
 

@@ -79,6 +79,23 @@ class ReadableReportTests(unittest.TestCase):
         self.assertIn('withheld', _main_findings(report, 'en')[1])
         self.assertEqual(self.sample, original)
 
+    def test_main_findings_compare_gap_magnitude_without_inventing_significance(self):
+        report = copy.deepcopy(self.sample)
+        report['condition_results'] = [
+            {'dataset': 'sample', 'evaluator': 'model', 'condition': report['plan']['baseline'], 'signed_gap_pp': 2.1313},
+            {'dataset': 'sample', 'evaluator': 'model', 'condition': 'low', 'signed_gap_pp': 9.9106},
+            {'dataset': 'sample', 'evaluator': 'model', 'condition': 'high', 'signed_gap_pp': 2.0925},
+        ]
+        first, second = _main_findings(report, 'zh')
+        self.assertIn('保护前A组识别率比B组高约 2.1', first)
+        self.assertIn('low后差距扩大到约 9.9', second)
+        self.assertIn('high后差距约为 2.1 个百分点，与保护前数值接近', second)
+        self.assertNotIn('显著', first + second)
+        report['condition_results'][1]['signed_gap_pp'] = -1.0
+        self.assertIn('缩小到约 1.0 个百分点，变为B组识别率更高', _main_findings(report, 'zh')[1])
+        report['condition_results'][0]['signed_gap_pp'] = 0.0
+        self.assertIn('两组识别率相同', _main_findings(report, 'zh')[0])
+
     def test_effect_plots_preserve_intervals_and_highlight_conclusions(self):
         with tempfile.TemporaryDirectory() as folder, patch('scripts.render_audit_report.SimpleDocTemplate.build') as build:
             write_pdf_report(self.sample, Path(folder) / 'out.pdf')
