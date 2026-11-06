@@ -10,7 +10,7 @@ from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.platypus import Flowable, LongTable, Paragraph, SimpleDocTemplate, Spacer, TableStyle
+from reportlab.platypus import Flowable, KeepTogether, LongTable, PageBreak, Paragraph, SimpleDocTemplate, Spacer, TableStyle
 
 
 TEXT = {
@@ -146,6 +146,41 @@ class RateChart(Flowable):
                 canvas.drawString(x0 + width + 5, y, f'{float(value):.1f}%')
 
 
+class EffectChart(Flowable):
+    """Plot an estimate and pointwise interval with a shared family scale."""
+    def __init__(self, estimate, interval, bounds, font_name):
+        super().__init__()
+        self.estimate, self.interval, self.bounds = estimate, interval, bounds
+        self.font_name = font_name
+        self.width, self.height = A4[0] - 40 * mm, 47
+
+    def draw(self):
+        canvas = self.canv
+        lo, hi = self.bounds
+        def position(value):
+            return 25 + (float(value) - lo) / (hi - lo) * (self.width - 50)
+        canvas.setStrokeColor(colors.HexColor('#c6d3d4'))
+        canvas.line(25, 26, self.width - 25, 26)
+        canvas.setDash(2, 2)
+        canvas.setStrokeColor(colors.HexColor('#61777d'))
+        canvas.line(position(0), 17, position(0), 39)
+        canvas.setDash()
+        canvas.setFont(self.font_name, 8)
+        canvas.setFillColor(colors.HexColor('#33494f'))
+        for tick in sorted(set((lo, 0, hi))):
+            canvas.drawCentredString(position(tick), 4, f'{tick:.1f}')
+        canvas.setStrokeColor(colors.HexColor('#675297'))
+        canvas.setLineWidth(1.6)
+        if self.interval is not None:
+            left, right = map(position, self.interval)
+            canvas.line(left, 26, right, 26)
+            for x in (left, right):
+                canvas.line(x, 22, x, 30)
+        if self.estimate is not None:
+            canvas.setFillColor(colors.HexColor('#675297'))
+            canvas.circle(position(self.estimate), 26, 3.5, stroke=0, fill=1)
+
+
 def _number(value):
     if value is None:
         return '-'
@@ -243,6 +278,7 @@ def write_pdf_report(result, destination, language='en', report_font=None):
         'title': ParagraphStyle('title', fontName=font.fontName, fontSize=18, leading=23, textColor=colors.HexColor('#253846'), spaceAfter=12),
         'heading': ParagraphStyle('heading', fontName=font.fontName, fontSize=12, leading=16, textColor=colors.HexColor('#205f60'), spaceBefore=12, spaceAfter=6, keepWithNext=True),
         'body': ParagraphStyle('body', fontName=font.fontName, fontSize=9.3, leading=14, spaceAfter=5, wordWrap='CJK'),
+        'conclusion': ParagraphStyle('conclusion', fontName=font.fontName, fontSize=9.3, leading=14, spaceAfter=7, wordWrap='CJK', textColor=colors.HexColor('#aa2029')),
         'cell': ParagraphStyle('cell', fontName=font.fontName, fontSize=7.5, leading=10.5, wordWrap='CJK' if language == 'zh' else None),
         'headcell': ParagraphStyle('headcell', fontName=font.fontName, fontSize=7.5, leading=10.5, textColor=colors.white, wordWrap='CJK' if language == 'zh' else None),
     }
@@ -278,8 +314,6 @@ def write_pdf_report(result, destination, language='en', report_font=None):
 
     story.append(para(t['title'], 'title'))
     plan = result['plan']
-    if 'synthetic' in str(plan.get('scope', '')).lower():
-        story.append(para(t['synthetic']))
     pair = plan['hypotheses'][0]
     heading(t['reader_title'])
     story.append(para(t['reader_intro']))
@@ -316,24 +350,31 @@ def write_pdf_report(result, destination, language='en', report_font=None):
         story.append(para(f'{label}: {value}'))
     story.append(para(t['group_note']))
 
-    heading(t['condition'])
-    rows = [[x['dataset'], x['evaluator'], x['condition'], _number(x['overall_rank1_percent']),
-             _number(x['group_a_percent']), _number(x['group_b_percent']), _number(x['signed_gap_pp'])]
-            for x in result['condition_results']]
-    table([t['datasets'], t['evaluator'], t['setting'], t['overall'], t['group_a'], t['group_b'], t['gap']], rows,
-          [65, 65, 100, 56, 56, 56, 55])
+    for x in condition_rows:
+        story.append(para(f"{x['dataset']} / {x['evaluator']} / {x['condition']}: {t['overall']} = {_number(x['overall_rank1_percent'])}"))
 
+    if any(result[key] for key in ('primary_tests', 'secondary_tests', 'utility_tests')):
+        story.append(PageBreak())
     for key, label in [('primary_tests', 'primary'), ('secondary_tests', 'secondary'), ('utility_tests', 'utility')]:
-        heading(t[label])
         comparisons = result[key]
         if not comparisons:
-            story.append(para(t['none']))
             continue
+        heading(t[label])
         passed = sum(x.get('passes_correction') is True for x in comparisons)
         not_passed = sum(x.get('passes_correction') is False for x in comparisons)
         withheld = sum(x.get('passes_correction') is None for x in comparisons)
         story.append(para(t['counts'].format(passed=passed, not_passed=not_passed, withheld=withheld, total=len(comparisons))))
-        rows = []
+        note = '点表示差值估计，横线表示逐项95%置信区间，虚线为零差异参考；横轴单位为百分点。统计判定以校正后p值为准。' if language == 'zh' else 'Points show estimates; lines show pointwise 95% intervals. The dashed line marks zero; the axis is in percentage points. Decisions use adjusted p-values.'
+        story.append(para(note))
+        values = [0.0]
+        for x in comparisons:
+            if x.get('diff_pp') is not None:
+                values.append(float(x['diff_pp']))
+            if x.get('ci95') is not None:
+                values.extend(x['ci95'])
+        lo, hi = min(values), max(values)
+        padding = max((hi - lo) * .12, .5)
+        bounds = (lo - padding, hi + padding)
         for x in comparisons:
             comparison = x.get('condition')
             if comparison is not None:
@@ -343,10 +384,9 @@ def write_pdf_report(result, destination, language='en', report_font=None):
             ci = x.get('ci95')
             interval = '[' + _number(ci[0]) + ', ' + _number(ci[1]) + ']' if ci is not None else '-'
             decision = t['withheld'] if x.get('passes_correction') is None else t['pass'] if x['passes_correction'] else t['not_pass']
-            rows.append([x['dataset'], x.get('evaluator', '-'), comparison, _number(x['diff_pp']), interval,
-                         _number(x.get('p')), _number(x.get('holm_p')), decision])
-        table([t['datasets'], t['evaluator'], t['setting'], t['effect'], t['interval'], t['p'], t['holm'], t['decision']],
-              rows, [53, 53, 96, 55, 91, 55, 55, 49])
+            title = f"{x['dataset']} / {x.get('evaluator', '-')} / {comparison}"
+            detail = f"{t['effect']}: {_number(x['diff_pp'])}; {t['interval']}: {interval}; {t['p']}: {_number(x.get('p'))}; {t['holm']}: {_number(x.get('holm_p'))}; {decision}"
+            story.append(KeepTogether([para(title), EffectChart(x.get('diff_pp'), ci, bounds, font.fontName), para(detail)]))
 
     heading(t['diagnostics'])
     rows = [[x['dataset'], x['evaluator'], x['condition'], _number(x['full_gallery_chance_percent']),
@@ -356,10 +396,13 @@ def write_pdf_report(result, destination, language='en', report_font=None):
           [55, 55, 90, 58, 80, 164])
     heading(t['interpretation'])
     for key in ('pointwise', 'nonestimable', 'near_note', 'change_note', 'nondetection_note', 'mechanism_note', 'method_note'):
+        if key == 'mechanism_note' and not result['primary_tests'] and not result['utility_tests']:
+            continue
         story.append(para(t[key]))
     heading(t['reader_findings'])
     for paragraph in _interpret_results(result, language):
-        story.append(para(paragraph))
+        is_conclusion = ('校正后 p=' in paragraph or '基线条件（' in paragraph or 'adjusted p=' in paragraph or 'baseline (' in paragraph)
+        story.append(para(paragraph, 'conclusion' if is_conclusion else 'body'))
     heading(t['provenance'])
     story.append(para(f"{t['scores']}: {result['scores_sha256']}"))
     # Preserve the input plan's own description without turning it into a claim.

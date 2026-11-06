@@ -10,8 +10,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from reportlab.platypus import LongTable, Paragraph
-from scripts.render_audit_report import RateChart, _interpret_results, write_pdf_report
+from reportlab.platypus import KeepTogether, LongTable, Paragraph
+from scripts.render_audit_report import EffectChart, RateChart, _interpret_results, write_pdf_report
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -31,12 +31,16 @@ class ReadableReportTests(unittest.TestCase):
                     captured.append(item.getPlainText())
                 elif isinstance(item, LongTable):
                     captured.extend(cell.getPlainText() for row in item._cellvalues for cell in row if isinstance(cell, Paragraph))
+                elif isinstance(item, KeepTogether):
+                    captured.extend(child.getPlainText() for child in item._content if isinstance(child, Paragraph))
         text = '\n'.join(captured)
         self.assertIn('[-0.5330, 0.5330]', text)
         self.assertIn('Withheld', text)
         self.assertIn('Not passed', text)
         self.assertIn('0 passed, 1 did not pass, 1 withheld; 2 total', text)
-        self.assertIn('Synthetic example', text)
+        self.assertNotIn('Synthetic example', text)
+        self.assertNotIn('Mechanism comparisons', text)
+        self.assertNotIn('Utility comparisons', text)
         self.assertEqual(self.sample, original)
 
     def test_uncalibrated_decisions_not_converted_to_negative(self):
@@ -66,6 +70,17 @@ class ReadableReportTests(unittest.TestCase):
         self.assertIn('Change in gap from baseline', text)
         self.assertIn('formal decision withheld', text)
         self.assertIn('alpha 0.0500', text)
+
+    def test_effect_plots_preserve_intervals_and_highlight_conclusions(self):
+        with tempfile.TemporaryDirectory() as folder, patch('scripts.render_audit_report.SimpleDocTemplate.build') as build:
+            write_pdf_report(self.sample, Path(folder) / 'out.pdf')
+            story = build.call_args.args[0]
+            plots = [child for item in story if isinstance(item, KeepTogether)
+                     for child in item._content if isinstance(child, EffectChart)]
+            self.assertEqual([p.interval for p in plots], [t.get('ci95') for t in self.sample['secondary_tests']])
+            conclusions = [p for p in story if isinstance(p, Paragraph) and p.style.name == 'conclusion']
+            self.assertTrue(conclusions)
+            self.assertTrue(any('formal decision withheld' in p.getPlainText() for p in conclusions))
 
     def test_cli_creates_pdf_json_and_refuses_overwrite(self):
         with tempfile.TemporaryDirectory() as folder:
