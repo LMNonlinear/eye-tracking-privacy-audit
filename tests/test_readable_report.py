@@ -133,7 +133,8 @@ class ReadableReportTests(unittest.TestCase):
             self.assertEqual(completed.returncode, 0, completed.stderr)
             report = json.loads((output / 'report.json').read_text(encoding='utf8'))
             self.assertEqual(report['family_sizes'], [0, 2, 0])
-            self.assertTrue((output / 'report.pdf').read_bytes().startswith(b'%PDF-'))
+            self.assertTrue((output / 'report_summary.pdf').read_bytes().startswith(b'%PDF-'))
+            self.assertTrue((output / 'report_detailed.pdf').read_bytes().startswith(b'%PDF-'))
             again = subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
             self.assertNotEqual(again.returncode, 0)
             self.assertIn('Preserve previous results', again.stderr)
@@ -148,7 +149,8 @@ class ReadableReportTests(unittest.TestCase):
             self.assertNotEqual(completed.returncode, 0)
             self.assertIn('No suitable TrueType font', completed.stderr)
             self.assertTrue((output / 'report.json').is_file())
-            self.assertFalse((output / 'report.pdf').exists())
+            self.assertFalse((output / 'report_summary.pdf').exists())
+            self.assertFalse((output / 'report_detailed.pdf').exists())
 
     def test_existing_json_can_be_rendered_without_overwriting(self):
         source = ROOT / 'examples/ROBUST_AUDIT_SYNTHETIC_REPORT.json'
@@ -179,7 +181,7 @@ class ReadableReportTests(unittest.TestCase):
             self.assertEqual(len({row['subject_id'] for row in rows}), 200)
             self.assertEqual({row['fold'] for row in rows}, {'0', '1', '2', '3', '4'})
             self.assertEqual(hashlib.sha256(source.read_bytes()).hexdigest(),
-                             '34d1769100c8015052ba2843526a0d2b2c3a23d42af1a5d24685638c36c0305f')
+                             '6a796e0f13960b393a5be7d20c3d92374057882c8ea5c100d273e8b5123375ab')
             self.assertIn('Synthetic', json.loads((output / 'plan.json').read_text(encoding='utf8'))['scope'])
             again = subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
             self.assertNotEqual(again.returncode, 0)

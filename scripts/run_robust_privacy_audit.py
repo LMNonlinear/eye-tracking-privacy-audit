@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 
 from scripts.privacy_blocked_pipeline import load_table
-from scripts.render_audit_report import write_pdf_report
+from scripts.render_audit_summary import write_report_bundle
 from src.fairness.robust_inference import METHOD,group_contrast,paired_contrast,adjust_holm
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -81,8 +81,9 @@ def main():
                   scores_sha256=hashlib.sha256(Path(args.scores).read_bytes()).hexdigest())
     out.mkdir(parents=True);(out/'report.json').write_text(json.dumps(result,indent=2,allow_nan=False)+'\n',encoding='utf-8')
     # Retain JSON if rendering fails; never silently claim a PDF was produced.
-    write_pdf_report(result,out/'report.pdf',language=args.report_language,report_font=args.report_font)
-    print('ROBUST_AUDIT_COMPLETE',result['family_sizes'],status,'report.json report.pdf',flush=True)
+    write_report_bundle(result,out,language=args.report_language,report_font=args.report_font)
+    print('ROBUST_AUDIT_COMPLETE',result['family_sizes'],status,
+          'report.json report_summary.pdf report_detailed.pdf',flush=True)
 
 
 if __name__=='__main__':main()

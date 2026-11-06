@@ -291,7 +291,7 @@ def _interpret_results(result, language):
                 if language == 'zh':
                     yield f"{dataset} / {evaluator}，基线条件（{plan['baseline']}）：A组识别率 {a:.1f}%，B组 {b:.1f}%，A减B的估计差距为 {gap:+.2f} 个百分点。本报告未对基线差距单独进行显著性检验。"
                 else:
-                    yield f"{dataset} / {evaluator}, baseline ({plan['baseline']}): A {a:.1f}%, B {b:.1f}%; the estimated A-minus-B gap is {gap:+.1f} percentage points. This report does not separately test the baseline gap."
+                    yield f"{dataset} / {evaluator}, baseline ({plan['baseline']}): A {a:.1f}%, B {b:.1f}%; the estimated A-minus-B gap is {gap:+.2f} percentage points. This report does not separately test the baseline gap."
         for row in group:
             if row['condition'] == plan['baseline']:
                 continue
@@ -356,9 +356,9 @@ def write_pdf_report(result, destination, language='en', report_font=None):
     styles = {
         'title': ParagraphStyle('title', fontName=font.fontName, fontSize=18, leading=23, textColor=colors.HexColor('#253846'), spaceAfter=12),
         'heading': ParagraphStyle('heading', fontName=font.fontName, fontSize=12, leading=16, textColor=colors.HexColor('#205f60'), spaceBefore=12, spaceAfter=6, keepWithNext=True),
-        'body': ParagraphStyle('body', fontName=font.fontName, fontSize=9.3, leading=14, spaceAfter=5, wordWrap='CJK'),
-        'conclusion': ParagraphStyle('conclusion', fontName=font.fontName, fontSize=9.3, leading=14, spaceAfter=7, wordWrap='CJK', textColor=colors.HexColor('#aa2029')),
-        'main_result': ParagraphStyle('main_result', fontName=font.fontName, fontSize=14, leading=22, spaceAfter=10, wordWrap='CJK', textColor=colors.HexColor('#aa2029')),
+        'body': ParagraphStyle('body', fontName=font.fontName, fontSize=9.3, leading=14, spaceAfter=5, wordWrap='CJK', allowWidows=0, allowOrphans=0),
+        'conclusion': ParagraphStyle('conclusion', fontName=font.fontName, fontSize=9.3, leading=14, spaceAfter=7, wordWrap='CJK', textColor=colors.HexColor('#aa2029'), allowWidows=0, allowOrphans=0),
+        'main_result': ParagraphStyle('main_result', fontName=font.fontName, fontSize=14, leading=22, spaceAfter=10, wordWrap='CJK', textColor=colors.HexColor('#aa2029'), allowWidows=0, allowOrphans=0),
         'cell': ParagraphStyle('cell', fontName=font.fontName, fontSize=7.5, leading=10.5, wordWrap='CJK' if language == 'zh' else None),
         'headcell': ParagraphStyle('headcell', fontName=font.fontName, fontSize=7.5, leading=10.5, textColor=colors.white, wordWrap='CJK' if language == 'zh' else None),
     }
@@ -509,22 +509,29 @@ def write_pdf_report(result, destination, language='en', report_font=None):
 
 
 def main():
-    """Render a pre-existing report without re-running or changing its analysis."""
+    """Render saved results as a two-PDF bundle or a legacy single detailed PDF."""
     import argparse
     import json
 
-    parser = argparse.ArgumentParser(description='Render an existing audit JSON as a PDF report')
+    parser = argparse.ArgumentParser(description='Render saved audit results without recalculating statistics')
     parser.add_argument('--input', required=True, help='Existing report.json')
-    parser.add_argument('--output', required=True, help='New PDF file; existing files are not overwritten')
+    target = parser.add_mutually_exclusive_group(required=True)
+    target.add_argument('--output-dir', help='Directory for summary and detailed PDFs')
+    target.add_argument('--output', help='Legacy single detailed PDF path')
     parser.add_argument('--report-language', choices=['en', 'zh'], default='en')
     parser.add_argument('--report-font', help='Unicode TrueType font (.ttf/.ttc)')
     args = parser.parse_args()
-    destination = Path(args.output)
-    if destination.exists():
-        raise FileExistsError('Preserve existing reports; choose a fresh PDF path')
     result = json.loads(Path(args.input).read_text(encoding='utf8'))
-    write_pdf_report(result, destination, args.report_language, args.report_font)
-    print(f'REPORT_COMPLETE {destination}', flush=True)
+    if args.output_dir:
+        from scripts.render_audit_summary import write_report_bundle
+        paths = write_report_bundle(result, args.output_dir, args.report_language, args.report_font)
+        print('REPORTS_COMPLETE', *(str(path) for path in paths), flush=True)
+    else:
+        destination = Path(args.output)
+        if destination.exists():
+            raise FileExistsError('Preserve existing reports; choose a fresh PDF path')
+        write_pdf_report(result, destination, args.report_language, args.report_font)
+        print(f'REPORT_COMPLETE {destination}', flush=True)
 
 
 if __name__ == '__main__':

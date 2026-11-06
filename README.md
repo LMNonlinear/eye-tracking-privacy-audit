@@ -1,59 +1,141 @@
 # Group Privacy Audit for Eye-Tracking Identification
 
-This repository provides a score-table audit for comparing identification risk between two groups across privacy-protection conditions. It calculates equal-fold group risks, residual differences, changes from baseline, pointwise confidence intervals and Holm-adjusted comparisons. It also records descriptive diagnostics and input provenance.
+**Assess who remains identifiable after protection, how group gaps change, and which differences receive statistical support.**
 
-The repository contains **synthetic examples only**. It does not contain eye-tracking recordings, participant data, trained model weights or the paper's individual-level scores.
+This pipeline turns participant-level identification scores and a declared comparison plan into **two English PDF reports**: a two-page summary for quick review and a detailed report with every comparison. Charts show group risks and differences; statistical results retain confidence intervals, raw p-values and Holm-adjusted p-values. A JSON report preserves the complete machine-readable output.
 
-## Run the synthetic example
+The tool helps researchers compare privacy-protection settings across groups. It analyzes existing scores supplied by users and runs locally without uploading inputs or results.
 
-Use Python 3.11 or later, then install the dependencies and run from the repository root:
+## Pipeline
+
+```mermaid
+flowchart TD
+    A[Participant-level score CSV] --> C[Validate complete paired panels]
+    B[Comparison plan JSON] --> C
+    C --> D[Average repetitions within participant]
+    D --> E[Estimate group risks and contrasts with equal fold weights]
+    E --> F[Welch-Satterthwaite inference and pointwise intervals]
+    G[Method identity and calibration record] --> H{Formal decisions enabled?}
+    F --> H
+    H -->|Yes| I[Holm correction within declared families]
+    H -->|No| J[Retain estimates and withhold formal decisions]
+    I --> K[Complete report.json]
+    J --> K
+    K --> L[report_summary.pdf: two-page overview]
+    K --> M[report_detailed.pdf: all results and diagnostics]
+```
+
+Both reports use the same saved results. Rendering does not rerun the analysis, change p-values or redefine comparison families.
+
+## Quick start
+
+Use Python 3.11 or later. Run these commands from the repository root:
 
 ```bash
 python -m pip install -r requirements.txt
 python -m scripts.run_robust_privacy_audit --scores examples/privacy_pipeline_scores.csv --plan configs/privacy_pipeline_blocked_example.json --output results/example_audit
 ```
 
-The output directory must not already exist. The command writes `results/example_audit/report.json` for machine processing and `results/example_audit/report.pdf` for reading and sharing. The PDF includes group identification-rate charts for each dataset and evaluator, with results shown separately for each protection condition. It also explains the direction of the group gap and presents the pre-specified statistical comparisons. An example JSON is included as `examples/ROBUST_AUDIT_SYNTHETIC_REPORT.json`. Its residual difference is zero; the baseline-relative change has zero sampling variance, so the software withholds that formal decision. These synthetic values are not results from the study.
+The output directory must be new.
 
-To produce a Chinese PDF, add `--report-language zh` to the command. A suitable system TrueType Chinese font is required. If a font is unavailable or lacks a character in the report, use `--report-font` with a Unicode `.ttf` or `.ttc` font path. The English report is the default; its bundled font supports common Latin characters. Both report languages embed their selected font. Reports are written locally; the tool does not upload scores or results.
+| Output | Purpose |
+|---|---|
+| `report_summary.pdf` | Two pages: main findings first, a before/after group-gap chart and corrected-decision graphics. |
+| `report_detailed.pdf` | All group-rate charts, effects, pointwise intervals, raw and adjusted p-values, interpretations and diagnostics. Length depends on the plan. |
+| `report.json` | Complete numerical results, plan, calibration status and input hash. |
 
-For a more detailed artificial example with 200 simulated participants and three conditions, generate a fresh fixture and audit it:
+These files appear in `results/example_audit/`. The small bundled example includes a withheld zero-variance decision. For a more informative report with 200 simulated participants and several protection settings, run:
 
 ```bash
 python examples/generate_illustrative_scores.py --output results/illustrative_inputs
-python -m scripts.run_robust_privacy_audit --scores results/illustrative_inputs/synthetic_scores.csv --plan results/illustrative_inputs/plan.json --output results/illustrative_audit --report-language zh
+python -m scripts.run_robust_privacy_audit --scores results/illustrative_inputs/synthetic_scores.csv --plan results/illustrative_inputs/plan.json --output results/illustrative_audit
 ```
 
-Open `results/illustrative_audit/report.pdf` to view the Chinese report, including charts and a concise interpretation. The fixture uses a fixed random seed and is solely for demonstrating the report. It is neither a study dataset nor a calibration experiment. A plan whose scope identifies it as synthetic receives a sample-data note in the report footer.
+Both examples are entirely synthetic. The second uses a fixed seed to demonstrate reports; it is not a calibration experiment. Synthetic reports carry a small sample-data note in the footer.
 
-To render an existing JSON without recalculating the analysis, choose a new PDF path:
+## Reading the reports
+
+The summary opens with two large, red statements describing the observed baseline gap and whether its magnitude becomes larger or smaller after protection. They describe numerical estimates, not a separate test of baseline significance. The first-page chart compares baseline gaps with the range of protected-condition gaps. Its segments show observed ranges, **not confidence intervals**. For more than five dataset/model panels, the summary shows four individually and combines the remaining panels into a clearly labeled range; the detailed report retains every panel.
+
+The second page separates supported, not-supported and withheld decisions. Residual-gap and baseline-change comparisons appear on separate display rows but remain in their original shared correction family. Empty mechanism or utility families are omitted. The summary is limited to two pages without removing comparisons from the detailed report or JSON.
+
+Use the detailed report to check exact settings, signed effects, pointwise 95% confidence intervals, raw p-values and adjusted p-values. A positive A-minus-B gap means group A has a higher estimated identification rate. A signed gap change is the protected gap minus the baseline gap; this differs from a change in absolute gap magnitude when direction reverses. A result that does not pass correction does not establish equal protection.
+
+## Use your own scores
 
 ```bash
-python -m scripts.render_audit_report --input results/example_audit/report.json --output results/example_audit/report_zh.pdf --report-language zh
+python -m scripts.run_robust_privacy_audit --scores path/to/scores.csv --plan path/to/plan.json --output results/my_audit
 ```
 
-Existing output files are never overwritten. If PDF generation fails, the command reports the error and preserves any `report.json` already written; render that JSON again after resolving the font or output issue.
+| CSV column | Meaning |
+|---|---|
+| `subject_id` | Stable participant identifier across conditions. |
+| `fold` | Test fold, numbered 0 through 4. |
+| `group` | Recorded group label; the plan specifies the ordered pair. |
+| `evaluator` | Identification model or evaluation setting. |
+| `condition` | Baseline, protection or control condition named in the plan. |
+| `replicate` | Paired repetition ID, aligned across conditions. |
+| `rank1_ir` | Finite Rank-1 identification percentage from 0 to 100. |
+| `dataset` | Optional dataset ID for combining datasets. |
+| `utility` | Optional utility score, complete and shared across evaluators. |
 
-## Input and comparison plan
+Each target group needs at least two participants in each of five folds. Each evaluator must have the same complete participant set and paired repetitions in every condition. Repetitions are averaged within participant; folds then receive equal weight. Participants outside the target pair may remain in the score table and overall summaries. Users remain responsible for valid collection, training/test separation and gallery construction.
 
-The CSV requires `subject_id,fold,group,evaluator,condition,replicate,rank1_ir`. Scores are finite percentages from 0 to 100. The plan specifies one ordered group pair, a baseline, declared conditions and optional matched mechanism pairs. Each target group needs at least two participants in each of five folds, numbered 0–4. Each evaluator must have the same complete participant set and paired replicate IDs in every condition. The optional `dataset` column separates datasets; optional `utility` must be complete and shared across evaluators. Repetitions are averaged within participant, then folds are weighted equally.
+Start from [the example plan](configs/privacy_pipeline_blocked_example.json). Define the baseline, conditions, ordered pair, controls and optional mechanism pairs before analysis. The `scope` field describes intended use and appears in the report; include `synthetic` for generated examples to enable the sample footer.
 
-The example JSON uses schema version 2, alpha 0.05 and Holm correction. Its `seed`, `n_boot` and `n_perm` fields are inherited from a separate blocked-resampling interface and do not control this entry's approximate t inference. The shared input validator nevertheless requires matching positive `n_boot` and `n_perm`. Define conditions and comparison families before analysis.
+The current schema uses version 2, alpha 0.05 and Holm correction. Fields `seed`, `n_boot` and `n_perm` are retained for compatibility and do **not** control this approximate t-based method. The validator requires positive, matching `n_boot` and `n_perm`.
 
-## Report and interpretation
+## Statistical outputs
 
-Main findings appear immediately below the report title, before the charts and detailed statistical results.
+The audit keeps three separately corrected families:
 
-Empty comparison families are omitted from the PDF. Group-rate bar charts and effect plots with pointwise 95% confidence intervals present the main results; each effect plot retains its numerical estimate and p-values. Key interpretation paragraphs appear in red, including results that do not pass correction. A separate main-findings section uses two sentences in larger red text to describe the observed gap before protection and whether its magnitude increases or decreases after protection. Gaps that round to the same one-decimal value are described as numerically close, not statistically equivalent. Baseline significance is not inferred; formal statistical results remain in the detailed report. The synthetic sample label appears in the footer. Detailed fold diagnostics remain in a compact table and all results remain available in JSON.
+1. **Mechanism comparisons:** the first declared condition's group gap minus the second's.
+2. **Residual gaps and baseline changes:** protected A-minus-B gaps and paired changes from baseline, corrected together.
+3. **Utility comparisons:** paired utility differences for declared condition pairs.
 
-The PDF charts show identification-rate point estimates on a 0–100% scale. The group order comes from the plan; a positive A-minus-B gap means group A has a higher estimated identification rate. Bars do not display uncertainty; consult the pointwise confidence intervals and adjusted comparisons in the report. The interpretation describes the baseline gap as an estimate without a separate baseline significance test, then reports each protected gap and its change from baseline with the available adjusted test results. Describe protection parameters in the plan; the report cannot infer parameters not provided. The report retains condition summaries, signed group gaps, changes from baseline, mechanism and utility comparisons where specified, raw and adjusted p-values, family sizes, diagnostics, a score-file hash and calibration status. It also summarizes the number of passed, not-passed and withheld decisions in each family. An unestimable zero-variance test is retained in its family and its decision is withheld. The intervals are pointwise, not simultaneous intervals; a result that does not pass correction does not prove equal protection.
+The estimator uses group-by-fold variances and Welch-Satterthwaite approximate t inference. Intervals are pointwise, not simultaneous. A zero-variance test remains in its Holm family with p = 1 for correction; its individual p-value and formal decision are withheld. Diagnostic flags, including near-chance identification and fold-direction differences, do not veto residual-risk results.
 
-Inference is conditional on the supplied fitted models and galleries and assumes independent participants. The included score-level calibration summary is checked against the inference source; it does not establish independence under shared-gallery or overlapping-training dependence, nor directly establish familywise error control for every new comparison plan. Missing calibration or a changed method disables formal decisions. The audit does not verify how data were collected, split or protected, and does not establish equivalence, causal demographic effects, a privacy guarantee or the strongest possible attack. The study's noise-aware training and scoring experiments are separate from this score-table tool.
+The included score-level calibration record is checked against the inference source. Missing calibration or a changed method disables formal decisions while retaining estimates. Inference is conditional on fitted models and observed galleries and assumes independent participants. The calibration record does not establish independence under shared-gallery or overlapping-training dependence, or familywise error control for every new plan. This tool does not establish equivalence, demographic causation, a privacy guarantee or a strongest-attack bound. Noise-aware model training and scoring are separate from this score-table audit.
 
-## Tests
+## Regenerate reports from saved results
+
+Generate both PDFs without recomputing statistics:
+
+```bash
+python -m scripts.render_audit_report --input results/my_audit/report.json --output-dir results/my_audit_english_reports
+```
+
+Existing PDFs are never overwritten. If rendering fails during an audit, the command reports the error and preserves the completed JSON. Use the rendering command after resolving the issue. Both PDFs are rendered before either is copied to the destination. Choose a new directory if either output already exists.
+
+The earlier single-PDF command remains available:
+
+```bash
+python -m scripts.render_audit_report --input results/my_audit/report.json --output results/my_audit_detailed_copy.pdf
+```
+
+This legacy `--output` command produces only a detailed report. The analysis command now names its detailed output `report_detailed.pdf`, replacing `report.pdf`.
+
+English is the default for both reports and all examples. Fonts are embedded so text remains searchable and copyable. Use `--report-font path/to/font.ttf` for labels requiring a different Unicode font. The existing `--report-language zh` option remains available for Chinese headings and interpretations; user labels and technical metadata retain their original language.
+
+## Repository contents and data privacy
+
+```text
+configs/     Example comparison plan
+examples/    Synthetic scores, saved example result and generator
+scripts/     Input validation, audit entry point and PDF renderers
+src/         Calibrated statistical inference
+dev/         Aggregate calibration evidence
+tests/       Inference, portability and report-generation checks
+```
+
+This repository contains code, documentation, synthetic examples and aggregate calibration evidence. It contains no participant-level study scores, raw eye-tracking recordings, model weights, private reports or unpublished manuscripts. The `results/` and `audit_output/` directories are ignored by Git. Store your own inputs and reports in an appropriately protected location; an ignore rule is not access control.
+
+## Verification
 
 ```bash
 python -m unittest discover -s tests -p 'test_*.py' -v
 ```
 
-`src/fairness/robust_inference.py` is retained byte-for-byte from the calibrated study code. The CSV loader was extracted from the study's input adapter without its unused historical analysis functions. The executable entry and tests preserve the calibrated method and verify that Git's LF/CRLF conversion does not falsely invalidate its source identity.
+Tests cover calibrated inference, LF/CRLF source identity, preserved results, withheld decisions, paired outputs, overwrite protection and large-plan summaries. The page-count test uses Poppler's `pdfinfo` when installed and otherwise reports a skip. PDF rendering requires ReportLab; the default English font is bundled with it.
+
+`src/fairness/robust_inference.py` is retained from the calibrated study implementation. The CSV loader was extracted from the study adapter without unused historical analysis functions. Report generation is a presentation layer over the saved method output.
